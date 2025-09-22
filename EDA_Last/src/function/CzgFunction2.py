@@ -1,16 +1,7 @@
-# -*-coding:utf-8-*-
-# Author: WSKH
-# Blog: wskh0929.blog.csdn.net
-# Time: 2022/9/1 12:07
-import sys
-
-# sys.path.append('/home/eda220806/project/code')
-
 from src.classes.EdaClasses import *
 import linecache
 
 
-# 读取ICEEC2020_5.txt数据
 def read_items_from_ICEEC(path):
     return_data = []
     file = open(path, 'r')
@@ -53,28 +44,20 @@ def read_items_from_ICEEC(path):
     return return_data
 
 
-# 读取数据，返回Instance对象
 def get_instance(ports_area_input_txt_path, ports_link_input_txt_path):
     link_list = read_data_port_link(ports_link_input_txt_path)
     item_list, rule_dict, area_list = read_data_port_area(ports_area_input_txt_path)
     instance = Instance(item_list, link_list, rule_dict, area_list)
-    # print('items', instance.items[0].boundary)
-    # print('links', instance.links[0].link_dict)
-    # print('rule', instance.rule)
-    # print('area', instance.area)
     return instance
 
 
-# 读取模块文件格式
 def read_data_port_area(ports_area_input_txt_path):
     return_data = []
     area_list = []
     rule_dict = {}
     item_list = []
-    ### 读取内容
+
     file = open(ports_area_input_txt_path, 'r')
-    ## 先读前两行
-    # 第一行
     line_1 = linecache.getline(ports_area_input_txt_path, 1).replace(' ', '')
     line_1 = line_1.replace('Area:', '').replace(')', ' ').replace(',', ' ').replace('(', '').replace('\n', '')
     area_point_list = line_1.split(' ')
@@ -83,7 +66,6 @@ def read_data_port_area(ports_area_input_txt_path):
         x = float(area_point_list[i])
         y = float(area_point_list[i + 1])
         area_list.append([x, y])
-    # 第二行
     line_2 = linecache.getline(ports_area_input_txt_path, 2)
     line_2 = line_2.replace('Rule:', '').replace(';', ' ').replace('(', ' (').replace('\n', '')
     rule = line_2.split(' ')
@@ -98,18 +80,11 @@ def read_data_port_area(ports_area_input_txt_path):
             rule_dict[key] = (x, y)
         else:
             rule_dict[key] = float(value[1:4])
-    ## 模块
     txt_data = file.readlines()
     txt_data.pop(0)
     txt_data.pop(0)
 
     for i in range(0, len(txt_data) - 1, 5):
-        # print(i, txt_data[i])
-        # print(i+1, txt_data[i+1])
-        # print(i+2, txt_data[i+2])
-        # print(i+3, txt_data[i+3])
-        # print(i+4, txt_data[i+4])
-        # print('==================')
         # name
         item_name = txt_data[i].replace('Module:', '').replace('\n', '')
         # boundary
@@ -130,7 +105,6 @@ def read_data_port_area(ports_area_input_txt_path):
         x_min = min(x_list)
         y_min = min(y_list)
         item_boundary_list = [(x - x_min, y - y_min) for x, y in item_boundary_list]
-        # port 貌似都是3个，这是固定的
         port_list = [[], [], []]
         port_layers = []
         for k in range(3):
@@ -148,25 +122,17 @@ def read_data_port_area(ports_area_input_txt_path):
                 temp_list.append(y)
                 port_list[k].append(temp_list)
             port_list[k] = [[x - x_min, y - y_min] for x, y in port_list[k]]
-        # item
-        # print('item_name == ', item_name)
-        # print('item_boundary_list == ', item_boundary_list)
-        # print('port_list == ', port_list)
-        # print('==========================================')
         item = Item(item_name, item_boundary_list, port_list, boundary_layer, port_layers)
         item.init_item()
         item_list.append(item)
-    # print(len(item_list))
     return_data.append(item_list)
     return_data.append(rule_dict)
     return_data.append(area_list)
     return return_data
 
 
-# 读取连接文件格式
 def read_data_port_link(ports_link_input_txt_path):
     return_data = []
-    # 读取内容
     file = open(ports_link_input_txt_path, 'r')
     file_data = []
     for item in file.readlines():
@@ -175,11 +141,8 @@ def read_data_port_link(ports_link_input_txt_path):
         item = item.split(' ')
         if item[0][0:4] != 'Link':
             file_data.append(item)
-    # 生成对象
     for i in range(0, len(file_data) - 1, 2):
         link_dict = {}
-        # file_data[i].pop()
-        # file_data[i+1].pop()
         name_list = file_data[i]
         num_list = file_data[i + 1]
         for k in range(len(name_list)):

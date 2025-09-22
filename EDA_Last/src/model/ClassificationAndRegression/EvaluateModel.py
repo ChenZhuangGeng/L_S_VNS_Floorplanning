@@ -1,12 +1,6 @@
 import copy
-import sys
-from tokenize import String
+from src.function.RoutingScore_LAHC import RoutingScore_Interface, DataUtils
 
-from src.function import ReadFileUtils
-from src.function.RoutingScore import RoutingScore
-from src.function.RoutingScore_LAHC_V4 import RoutingScore_Interface, DataUtils
-
-sys.path.append('/home/eda220806/project/code')
 import functools
 import math
 import time
@@ -69,14 +63,6 @@ class EvaluateModel:
         # 开始循环
         while len(result_list) < len(self.sequence) and len(sky_line_list) > 0:
 
-            # # ==================== 检查点 1 (主循环开始时) ====================
-            # # 检查时间是否已经超限，如果超了就直接跳出主循环
-            # if loop_count > 0 and start_time and max_time and (time.time() - start_time >= max_time):
-            #     print(f"在第 {loop_count + 1} 次布局尝试前超时，提前退出。")
-            #     break
-            # # ===============================================================
-
-            # print("-----------------------------")
             # 如果天际线长度为0，则直接返回None
             if sky_line_list[0][2] <= 0:
                 sky_line_list.pop(0)
@@ -87,12 +73,6 @@ class EvaluateModel:
             self.hl_hr = self.get_h1_h2_by_sky_line(sky_line_list[0], sky_line_list)
             # 遍历所有L/T型模块，选出最高得分L/T型模块
             for i in range(len(self.sequence)):
-
-                # # ==================== 检查点 2 (推荐! 细粒度控制) ====================
-                # # 在尝试每个新模块前检查时间，这里的检查频率更高，控制更精确
-                # if loop_count > 0 and start_time and max_time and (time.time() - start_time >= max_time):
-                #     break  # 跳出内层 for 循环
-                # # ===============================================================
 
                 # 获取当前要放置的模块
                 index = self.sequence[i]
@@ -113,11 +93,6 @@ class EvaluateModel:
             # 如果L/T型的模块没找到最优的，则开始遍历矩形，找矩形里的最高得分
             if global_best_score is None or global_best_score.waste_value > 0:
                 for index in range(len(self.sequence)):
-
-                    # # ==================== 检查点 3 (同检查点2) ====================
-                    # if loop_count > 0 and start_time and max_time and (time.time() - start_time >= max_time):
-                    #     break  # 跳出内层 for 循环
-                    # # =============================================================
 
                     # 获取当前要放置的模块
                     item = self.items[index]
@@ -167,10 +142,6 @@ class EvaluateModel:
                 self.get_absolute_boundary_by_sky_line(result.rotate_item.boundary.copy(), result.sky_line))
         # 预测得分
 
-
-        # todo 实现布线算法返回布局布线过后的得分
-        ## 输入: result_list, self.area, links, name_list, ports
-        ## 输出: link_score
         if GCN_ON == False:
             items = []
             if len(result_list) <= 5:
@@ -184,27 +155,22 @@ class EvaluateModel:
             else:
                 dis = 45
             for result in result_list:
-                # print("===result:", result.to_string(), "===")
 
-                # 对模块进行缩小，并还原坐标
                 copy_rsult =  copy.deepcopy(result)
 
 
                 copy_rsult.rotate_item.boundary = WskhFunction.zoom_use_exhaustive_method(copy_rsult.rotate_item, -dis)
                 copy_rsult.rotate_item.init_rotate_item()
 
-                # 实际用
                 copy_rsult.left_bottom_point = [copy_rsult.left_bottom_point[0] + dis / 2.0 + min_x,
                                             copy_rsult.left_bottom_point[1] + dis / 2.0 + min_y]
 
-                item = copy_rsult.item  # 获取 item 对象的引用
+                item = copy_rsult.item
                 item.boundary = copy_rsult.rotate_item.boundary
                 item.ports = copy_rsult.rotate_item.ports
                 dx = copy_rsult.left_bottom_point[0]
                 dy = copy_rsult.left_bottom_point[1]
 
-                # 更新 item.boundary
-                # 创建一个包含新坐标元组的新列表，并将其赋值回 item.boundary
                 item.boundary = [(x + dx, y + dy) for x, y in item.boundary]
 
                 new_ports = []
@@ -213,79 +179,50 @@ class EvaluateModel:
                     new_ports.append(updated_port_coord_list)
                 item.ports = new_ports
 
-                # print("===item:", item.to_stringbyczg(), "===")
                 items.append(item)
 
-            # 此处传的是result_list，具体还需要转化
             loc_area = [(x + min_x, y + min_y) for x, y in self.area]
 
-            # items是全部的item集合，但是不一定全部都放得下所以需要对links进行过滤，传进去算法的links是过滤后的
-            # 传old_links是为了计算all_items_count 为了评分的时候能知道总共有多少个模块
             real_links = DataUtils().filter_invalid_links(links, items)
             time_route, score = RoutingScore_Interface.Solve_Interface(items, loc_area, real_links, links, start_time, max_time)
-
-            # print("===time_route:", time_route, "===")
-            # print("===score:", score, "===")
-
-            # Todo: 评估一次就保存一次结果，供GCN训练
-            # ReadFileUtils.generate_layoutForGCNTrain_txt(self.area, items, score, forGCNTrain_txt_output_path)
 
             return Evaluation(score, self.sequence, result_list)
 
         else:
-            # 原本的得分预测方式
             x = WskhFunction.calc_features_for_gcn(boundary_list, self.area, links, name_list, ports)
             x_data = [Data(x=x[0], edge_index=x[1])]
             data_set = MyDataSet(x_data)
             data_loader = DataLoader(data_set, batch_size=1, shuffle=True)
-            # print("===type(data_loader):", type(data_loader), "===")
             for data in data_loader:
                 predict_score = self.score_ml_model(data.x, data.edge_index, data.batch)
-                # print("===type(predict_score):", type(predict_score),"===")
-                # print("===预测得分:", predict_score[0][0].item(),"===")
                 return Evaluation(predict_score[0][0].item(), self.sequence, result_list)
 
 
 
 
-    # 指定旋转类型，进行评分
     def score(self, item, rotate_item, result_list, sky_line_list):
-        # 获取模块的顶点个数
         l = len(rotate_item.boundary)
-        # 从天际线列表中取出第一个元素作为放置的天际线
         sky_line = sky_line_list[0]
-        # 如果超出天际线长度，则直接返回None(这个判断只对矩形有用)
         if l == 4 and self.is_out_of_sky_line(rotate_item, sky_line):
             return None
-        # 如果上面都通过了，说明该天际线可以放置当前模块，那么进行放置，并计算分数
         score = None
         if l == 4:
-            # 矩形的评分
             score = self.calc_S_score(item, rotate_item, result_list, sky_line_list)
         elif l == 6:
-            # L型的评分
             score = self.calc_L_score(item, rotate_item, result_list, sky_line_list)
         elif l == 8:
-            # T型的评分
             score = self.calc_T_score(item, rotate_item, result_list, sky_line_list)
         else:
             raise RuntimeError("出现了未知形状的模块")
         return score
 
-    # 计算位置评分和连线评分的加权评分
     def calc_placeS_linkS_S(self, placeS, linkS):
-        # placeS的权重
         w = 0
-        # 返回综合得分
         return (1 / (1 + math.exp(-placeS))) * w + (1 / (1 + math.exp(-linkS))) * (1 - w)  # Sigmoid
 
-    # 计算T块的得分
     def calc_T_score(self, item, rotate_item, result_list, sky_line_list):
-        # 复制天际线列表
         copy_sky_line_list = sky_line_list.copy()
-        # 记录原来天际线的个数
         old_sky_line_cnt = len(copy_sky_line_list)
-        # 从天际线列表中取出第一个元素作为放置的天际线
         sky_line = copy_sky_line_list.pop(0)
         # ======================================================== 0度，往左放 ========================================================
         if rotate_item.type == '0' and rotate_item.w <= sky_line[2]:
@@ -303,28 +240,20 @@ class EvaluateModel:
         elif rotate_item.type == '90' and rotate_item.w1 <= sky_line[2]:
             # ======================================================== 90度，往右放 ========================================================
             left_bottom_point = (sky_line[0] + sky_line[2] - rotate_item.w1, sky_line[1])
-            # 如果超出边界，则直接返回None
             if self.is_out_of_bound(rotate_item, self.area,
                                     left_bottom_point):
                 return None
-            # 需要对其进行重叠判断，如果重叠则不能在这个点进行放置，直接返回None
             if self.is_overlap(result_list, rotate_item, left_bottom_point):
                 return None
-            # 到这里说明可以放
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_x_y(copy_sky_line_list)
-            # 找到右边的天际线进行切割，并计算浪费
             waste = 0
-            # 找到第二高度
             b = False
             for i in range(len(copy_sky_line_list)):
                 cs = copy_sky_line_list[i]
                 if cs[0] == sky_line[0] + sky_line[2] and cs[1] >= sky_line[1]:
                     if cs[1] <= rotate_item.h3 + sky_line[1]:
-                        # 上方浪费
                         if cs[2] < rotate_item.w - rotate_item.floor_horizontal_line[2]:
                             return None
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2],
                                 rotate_item.h3 + sky_line[1] - cs[1]):
@@ -334,8 +263,6 @@ class EvaluateModel:
                         waste = (rotate_item.w - rotate_item.floor_horizontal_line[2]) * (
                                 rotate_item.h3 + sky_line[1] - cs[1])
                     else:
-                        # 下方浪费
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2], rotate_item.h3 + sky_line[1]):
                             return None
@@ -346,11 +273,9 @@ class EvaluateModel:
                     break
             if b is False:
                 return None
-            # 常规切割
             if sky_line[2] - rotate_item.floor_horizontal_line[2] > 0:
                 copy_sky_line_list.append((sky_line[0], sky_line[1],
                                            sky_line[2] - rotate_item.floor_horizontal_line[2]))
-            # 加入item潜在的天际线
             for add_sky_line in rotate_item.add_sky_line_list:
                 new_add_sky_line = (
                     add_sky_line[0] + sky_line[0] + (sky_line[2] - rotate_item.floor_horizontal_line[2]),
@@ -358,25 +283,18 @@ class EvaluateModel:
                 for sk in copy_sky_line_list:
                     if sk[1] > new_add_sky_line[1] and str(sk) not in self.init_sky_line_set:
                         if sk[0] <= new_add_sky_line[0] and sk[0] + sk[2] >= new_add_sky_line[0]:
-                            # 左边切
                             new_add_sky_line = (sk[0] + sk[2], new_add_sky_line[1],
                                                 new_add_sky_line[0] + new_add_sky_line[2] - (sk[0] + sk[2]))
                             break
                         elif sk[0] >= new_add_sky_line[0] and sk[0] <= new_add_sky_line[0] + new_add_sky_line[2]:
-                            # 右边切
                             new_add_sky_line = (new_add_sky_line[0], new_add_sky_line[1], sk[0] - new_add_sky_line[0])
                             break
                 if new_add_sky_line[2] > 0:
                     copy_sky_line_list.append(new_add_sky_line)
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-            # 遍历新的天际线列表，将可以合并的天际线进行合并
             copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-            # 计算分数
             score = old_sky_line_cnt - len(copy_sky_line_list)
-            # 模块中心点坐标
             center_position = self.calc_center_position(rotate_item, left_bottom_point)
-            # 生成当前得分对象
             return Score(score, self.calc_link_score(center_position, rotate_item, result_list), 0, 0,
                          copy_sky_line_list,
                          Result(Item.copy(item), rotate_item, rotate_item.orient, center_position,
@@ -384,29 +302,20 @@ class EvaluateModel:
         elif rotate_item.type == '270' and rotate_item.floor_horizontal_line[2] <= sky_line[2]:
             # ======================================================== 270度，往左放 ========================================================
             left_bottom_point = (sky_line[0] - rotate_item.w2, sky_line[1])
-            # 如果超出边界，则直接返回None
             if self.is_out_of_bound(rotate_item, self.area,
                                     left_bottom_point):
                 return None
-            # 存在重叠，则直接返回None
-            # 说明对标点不在包络矩形的左下角，所以是特殊的L型，所以在放置时，需要对其进行重叠判断，如果重叠则不能在这个点进行放置
             if self.is_overlap(result_list, rotate_item, left_bottom_point):
                 return None
-            # 到这里说明可以放
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_x_y(copy_sky_line_list)
-            # 找到左边的天际线进行切割，并计算浪费
             waste = 0
-            # 找到第二高度
             b = False
             for i in range(len(copy_sky_line_list)):
                 cs = copy_sky_line_list[i]
                 if cs[0] + cs[2] == sky_line[0] and cs[1] >= sky_line[1]:
                     if cs[1] <= rotate_item.h1 + sky_line[1]:
-                        # 上方浪费
                         if cs[2] < rotate_item.w - rotate_item.floor_horizontal_line[2]:
                             return None
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2],
                                 rotate_item.h1 + sky_line[1] - cs[1]):
@@ -416,8 +325,6 @@ class EvaluateModel:
                         waste = (rotate_item.w - rotate_item.floor_horizontal_line[2]) * (
                                 rotate_item.h1 + sky_line[1] - cs[1])
                     else:
-                        # 下方浪费
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2], rotate_item.h1 + sky_line[1]):
                             return None
@@ -428,11 +335,9 @@ class EvaluateModel:
                     break
             if b is False:
                 return None
-            # 常规切割
             if sky_line[2] - rotate_item.floor_horizontal_line[2] > 0:
                 copy_sky_line_list.append((sky_line[0] + rotate_item.floor_horizontal_line[2], sky_line[1],
                                            sky_line[2] - rotate_item.floor_horizontal_line[2]))
-            # 加入item潜在的天际线
             for add_sky_line in rotate_item.add_sky_line_list:
                 new_add_sky_line = (
                     add_sky_line[0] + sky_line[0] - rotate_item.w2,
@@ -440,47 +345,33 @@ class EvaluateModel:
                 for sk in copy_sky_line_list:
                     if sk[1] > new_add_sky_line[1] and str(sk) not in self.init_sky_line_set:
                         if sk[0] <= new_add_sky_line[0] and sk[0] + sk[2] >= new_add_sky_line[0]:
-                            # 左边切
                             new_add_sky_line = (sk[0] + sk[2], new_add_sky_line[1],
                                                 new_add_sky_line[0] + new_add_sky_line[2] - (sk[0] + sk[2]))
                             break
                         elif sk[0] >= new_add_sky_line[0] and sk[0] <= new_add_sky_line[0] + new_add_sky_line[2]:
-                            # 右边切
                             new_add_sky_line = (new_add_sky_line[0], new_add_sky_line[1], sk[0] - new_add_sky_line[0])
                             break
                 if new_add_sky_line[2] > 0:
                     copy_sky_line_list.append(new_add_sky_line)
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-            # 遍历新的天际线列表，将可以合并的天际线进行合并
             copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-            # 计算分数
             score = old_sky_line_cnt - len(copy_sky_line_list)
-            # 模块中心点坐标
             center_position = self.calc_center_position(rotate_item, left_bottom_point)
-            # 生成当前得分对象
             return Score(score, self.calc_link_score(center_position, rotate_item, result_list), 0, 0,
                          copy_sky_line_list,
                          Result(Item.copy(item), rotate_item, rotate_item.orient, center_position,
                                 sky_line, left_bottom_point))
         elif len(rotate_item.add_sky_line_list) == 1:
             # ======================================================== 180度，刚好放下 ========================================================
-            # T型180度，刚好放下才放
             if sky_line[2] == rotate_item.w2:
                 hl, hr = self.hl_hr
                 if hl == rotate_item.h2 and hr == rotate_item.h3:
                     left_bottom_point = (sky_line[0] - rotate_item.w1, sky_line[1])
-                    # 如果超出边界，则直接返回None
                     if self.is_out_of_bound(rotate_item, self.area,
                                             left_bottom_point):
                         return None
-                    # 存在重叠，则直接返回None
-                    # 说明对标点不在包络矩形的左下角，所以是特殊的L型，所以在放置时，需要对其进行重叠判断，如果重叠则不能在这个点进行放置
                     if self.is_overlap(result_list, rotate_item, left_bottom_point):
                         return None
-                    # 常规切割（这里不需要常规切割，因为正好放入，所以当前天际线更新后长度为0，被删除）
-
-                    # 加入item潜在的天际线
                     for add_sky_line in rotate_item.add_sky_line_list:
                         new_add_sky_line = (
                             add_sky_line[0] + sky_line[0] - rotate_item.w1,
@@ -488,40 +379,29 @@ class EvaluateModel:
                         for sk in copy_sky_line_list:
                             if sk[1] > new_add_sky_line[1] and str(sk) not in self.init_sky_line_set:
                                 if sk[0] <= new_add_sky_line[0] and sk[0] + sk[2] >= new_add_sky_line[0]:
-                                    # 左边切
                                     new_add_sky_line = (sk[0] + sk[2], new_add_sky_line[1],
                                                         new_add_sky_line[0] + new_add_sky_line[2] - (sk[0] + sk[2]))
                                     break
                                 elif sk[0] >= new_add_sky_line[0] and sk[0] <= new_add_sky_line[0] + new_add_sky_line[
                                     2]:
-                                    # 右边切
                                     new_add_sky_line = (
                                         new_add_sky_line[0], new_add_sky_line[1], sk[0] - new_add_sky_line[0])
                                     break
                         if new_add_sky_line[2] > 0:
                             copy_sky_line_list.append(new_add_sky_line)
-                    # 对天际线列表重新进行排序
                     copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-                    # 遍历新的天际线列表，将可以合并的天际线进行合并
                     copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-                    # 计算分数
                     score = old_sky_line_cnt - len(copy_sky_line_list)
-                    # 模块中心点坐标
                     center_position = self.calc_center_position(rotate_item, left_bottom_point)
-                    # 生成当前得分对象
                     return Score(score, self.calc_link_score(center_position, rotate_item, result_list), 0, 0,
                                  copy_sky_line_list,
                                  Result(Item.copy(item), rotate_item, rotate_item.orient, center_position,
                                         sky_line, left_bottom_point))
         return None
 
-    # 计算L块的得分
     def calc_L_score(self, item, rotate_item, result_list, sky_line_list):
-        # 复制天际线列表
         copy_sky_line_list = sky_line_list.copy()
-        # 记录原来天际线的个数
         old_sky_line_cnt = len(copy_sky_line_list)
-        # 从天际线列表中取出第一个元素作为放置的天际线
         sky_line = copy_sky_line_list.pop(0)
         # ======================================================== 0/270度，往左放 并且 往右放 ========================================================
         if (rotate_item.type == '0' or rotate_item.type == '270') and rotate_item.w <= sky_line[2]:
@@ -539,29 +419,20 @@ class EvaluateModel:
         elif rotate_item.type == '90' and rotate_item.floor_horizontal_line[2] <= sky_line[2]:
             # ======================================================== 90度，往右放 ========================================================
             left_bottom_point = (sky_line[0] + sky_line[2] - rotate_item.w1, sky_line[1])
-            # 如果超出边界，则直接返回None
             if self.is_out_of_bound(rotate_item, self.area,
                                     left_bottom_point):
                 return None
-            # 存在重叠，则直接返回None
-            # 说明对标点不在包络矩形的左下角，所以是特殊的L型，所以在放置时，需要对其进行重叠判断，如果重叠则不能在这个点进行放置
             if self.is_overlap(result_list, rotate_item, left_bottom_point):
                 return None
-            # 到这里说明可以放
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_x_y(copy_sky_line_list)
-            # 找到右边的天际线进行切割，并计算浪费
             waste = 0
-            # 找到第二高度
             b = False
             for i in range(len(copy_sky_line_list)):
                 cs = copy_sky_line_list[i]
                 if cs[0] == sky_line[0] + sky_line[2] and cs[1] >= sky_line[1]:
                     if cs[1] <= rotate_item.h1 + sky_line[1]:
-                        # 上方浪费
                         if cs[2] < rotate_item.w - rotate_item.floor_horizontal_line[2]:
                             return None
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2],
                                 rotate_item.h1 + sky_line[1] - cs[1]):
@@ -571,8 +442,6 @@ class EvaluateModel:
                         waste = (rotate_item.w - rotate_item.floor_horizontal_line[2]) * (
                                 rotate_item.h1 + sky_line[1] - cs[1])
                     else:
-                        # 下方浪费
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2], rotate_item.h1 + sky_line[1]):
                             return None
@@ -583,11 +452,9 @@ class EvaluateModel:
                     break
             if b is False:
                 return None
-            # 常规切割
             if sky_line[2] - rotate_item.floor_horizontal_line[2] > 0:
                 copy_sky_line_list.append((sky_line[0], sky_line[1],
                                            sky_line[2] - rotate_item.floor_horizontal_line[2]))
-            # 加入item潜在的天际线
             for add_sky_line in rotate_item.add_sky_line_list:
                 new_add_sky_line = (
                     add_sky_line[0] + sky_line[0] + (sky_line[2] - rotate_item.floor_horizontal_line[2]),
@@ -595,26 +462,18 @@ class EvaluateModel:
                 for sk in copy_sky_line_list:
                     if sk[1] > new_add_sky_line[1] and str(sk) not in self.init_sky_line_set:
                         if sk[0] <= new_add_sky_line[0] and sk[0] + sk[2] >= new_add_sky_line[0]:
-                            # 左边切
                             new_add_sky_line = (sk[0] + sk[2], new_add_sky_line[1],
                                                 new_add_sky_line[0] + new_add_sky_line[2] - (sk[0] + sk[2]))
                             break
                         elif sk[0] >= new_add_sky_line[0] and sk[0] <= new_add_sky_line[0] + new_add_sky_line[2]:
-                            # 右边切
                             new_add_sky_line = (new_add_sky_line[0], new_add_sky_line[1], sk[0] - new_add_sky_line[0])
                             break
                 if new_add_sky_line[2] > 0:
                     copy_sky_line_list.append(new_add_sky_line)
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-            # 遍历新的天际线列表，将可以合并的天际线进行合并
             copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-            # 计算分数
             score = old_sky_line_cnt - len(copy_sky_line_list)
-            # 模块中心点坐标
             center_position = self.calc_center_position(rotate_item, left_bottom_point)
-            # 生成当前得分对象
-            # return None
             return Score(score, self.calc_link_score(center_position, rotate_item, result_list), waste, 0,
                          copy_sky_line_list,
                          Result(Item.copy(item), rotate_item, rotate_item.orient, center_position,
@@ -622,29 +481,20 @@ class EvaluateModel:
         elif rotate_item.type == '180' and rotate_item.floor_horizontal_line[2] <= sky_line[2]:
             # ======================================================== 180度，往左放 ========================================================
             left_bottom_point = (sky_line[0] - rotate_item.w1, sky_line[1])
-            # 如果超出边界，则直接返回None
             if self.is_out_of_bound(rotate_item, self.area,
                                     left_bottom_point):
                 return None
-            # 存在重叠，则直接返回None
-            # 说明对标点不在包络矩形的左下角，所以是特殊的L型，所以在放置时，需要对其进行重叠判断，如果重叠则不能在这个点进行放置
             if self.is_overlap(result_list, rotate_item, left_bottom_point):
                 return None
-            # 到这里说明可以放
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_x_y(copy_sky_line_list)
-            # 找到左边的天际线进行切割，并计算浪费
             waste = 0
-            # 找到第二高度
             b = False
             for i in range(len(copy_sky_line_list)):
                 cs = copy_sky_line_list[i]
                 if cs[0] + cs[2] == sky_line[0] and cs[1] >= sky_line[1]:
                     if cs[1] <= rotate_item.h2 + sky_line[1]:
-                        # 上方浪费
                         if cs[2] < rotate_item.w - rotate_item.floor_horizontal_line[2]:
                             return None
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2],
                                 rotate_item.h2 + sky_line[1] - cs[1]):
@@ -654,8 +504,6 @@ class EvaluateModel:
                         waste = (rotate_item.w - rotate_item.floor_horizontal_line[2]) * (
                                 rotate_item.h2 + sky_line[1] - cs[1])
                     else:
-                        # 下方浪费
-                        # 判断浪费的空间里是否可以放下矩形,如果可以放下，则直接返回None
                         if self.waste_space_judge_place_rect_able is True and self.judge_waste_space_can_place_rect_able(
                                 rotate_item.w - rotate_item.floor_horizontal_line[2], rotate_item.h2 + sky_line[1]):
                             return None
@@ -666,11 +514,9 @@ class EvaluateModel:
                     break
             if b is False:
                 return None
-            # 常规切割
             if sky_line[2] - rotate_item.floor_horizontal_line[2] > 0:
                 copy_sky_line_list.append((sky_line[0] + rotate_item.floor_horizontal_line[2], sky_line[1],
                                            sky_line[2] - rotate_item.floor_horizontal_line[2]))
-            # 加入item潜在的天际线
             for add_sky_line in rotate_item.add_sky_line_list:
                 new_add_sky_line = (
                     add_sky_line[0] + sky_line[0] - (rotate_item.w - rotate_item.floor_horizontal_line[2]),
@@ -678,45 +524,30 @@ class EvaluateModel:
                 for sk in copy_sky_line_list:
                     if sk[1] > new_add_sky_line[1] and str(sk) not in self.init_sky_line_set:
                         if sk[0] <= new_add_sky_line[0] and sk[0] + sk[2] >= new_add_sky_line[0]:
-                            # 左边切
                             new_add_sky_line = (sk[0] + sk[2], new_add_sky_line[1],
                                                 new_add_sky_line[0] + new_add_sky_line[2] - (sk[0] + sk[2]))
                             break
                         elif sk[0] >= new_add_sky_line[0] and sk[0] <= new_add_sky_line[0] + new_add_sky_line[2]:
-                            # 右边切
                             new_add_sky_line = (new_add_sky_line[0], new_add_sky_line[1], sk[0] - new_add_sky_line[0])
                             break
                 if new_add_sky_line[2] > 0:
                     copy_sky_line_list.append(new_add_sky_line)
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-            # 遍历新的天际线列表，将可以合并的天际线进行合并
             copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-            # 计算分数
             score = old_sky_line_cnt - len(copy_sky_line_list)
-            # 模块中心点坐标
             center_position = self.calc_center_position(rotate_item, left_bottom_point)
-            # 生成当前得分对象
-            # return None
             return Score(score, self.calc_link_score(center_position, rotate_item, result_list), waste, 0,
                          copy_sky_line_list,
                          Result(Item.copy(item), rotate_item, rotate_item.orient, center_position,
                                 sky_line, left_bottom_point))
         return None
 
-    # 计算矩形块的得分
     def calc_S_score(self, item, rotate_item, result_list, sky_line_list):
-        # 复制一份天际线列表
         copy_sky_line_list = sky_line_list.copy()
-        # 从天际线列表中取出第一个元素作为放置的天际线
         sky_line = copy_sky_line_list.pop(0)
-        # 矩形的评分
         score = 0
-        # 找出当前天际线左右两边的墙高度 获取 (左hl，右hr)
         hl, hr = self.hl_hr
-        # 根据八种情况得分
         if hl >= hr:
-            # 左边墙比右边墙高
             if rotate_item.w == sky_line[2] and rotate_item.h == hl:
                 score = 7
             elif rotate_item.w == sky_line[2] and rotate_item.h == hr:
@@ -728,7 +559,7 @@ class EvaluateModel:
             elif rotate_item.w == sky_line[2] and rotate_item.h < hl and rotate_item.h > hr:
                 score = 3
             elif rotate_item.w < sky_line[2] and rotate_item.h == hr:
-                score = 2  # 靠右
+                score = 2
             elif rotate_item.w == sky_line[2] and rotate_item.h < hr:
                 score = 1
             elif rotate_item.w < sky_line[2] and rotate_item.h != hl:
@@ -736,41 +567,28 @@ class EvaluateModel:
             else:
                 return None
             if score == 2:
-                # 靠右
-                # 左下角点
                 left_bottom_point = (sky_line[0] + sky_line[2] - rotate_item.w, sky_line[1])
-                # 判断矩形是否超出边界
                 if self.is_out_of_bound(rotate_item, self.area, left_bottom_point):
                     return None
-                # 将矩形顶部的天际线加入
                 for add_sky_line in rotate_item.add_sky_line_list:
                     copy_sky_line_list.append(
                         (add_sky_line[0] + sky_line[0] + sky_line[2] - rotate_item.w, add_sky_line[1] + sky_line[1],
                          add_sky_line[2]))
-                # 常规切割
                 if sky_line[2] - rotate_item.w > 0:
                     copy_sky_line_list.append((sky_line[0], sky_line[1],
                                                sky_line[2] - rotate_item.w))
             else:
-                # 靠左
-                # 左下角点
                 left_bottom_point = (sky_line[0], sky_line[1])
-                # 判断矩形是否超出边界
                 if self.is_out_of_bound(rotate_item, self.area, left_bottom_point):
                     return None
-                # 将矩形顶部的天际线加入
                 for add_sky_line in rotate_item.add_sky_line_list:
                     copy_sky_line_list.append(
                         (add_sky_line[0] + sky_line[0], add_sky_line[1] + sky_line[1], add_sky_line[2]))
-                # 常规切割
                 if sky_line[2] - rotate_item.w > 0:
                     copy_sky_line_list.append((sky_line[0] + rotate_item.w, sky_line[1],
                                                sky_line[2] - rotate_item.w))
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-            # 遍历新的天际线列表，将可以合并的天际线进行合并
             copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-            # 模块中心点坐标
             center_position = self.calc_center_position(rotate_item, left_bottom_point)
             return Score(0, self.calc_link_score(center_position, rotate_item, result_list), 0, score,
                          copy_sky_line_list,
@@ -778,7 +596,6 @@ class EvaluateModel:
                                 sky_line,
                                 left_bottom_point))
         else:
-            # 右边墙比左边墙高
             if rotate_item.w == sky_line[2] and rotate_item.h == hr:
                 score = 7
             elif rotate_item.w == sky_line[2] and rotate_item.h == hl:
@@ -786,7 +603,7 @@ class EvaluateModel:
             elif rotate_item.w == sky_line[2] and rotate_item.h > hr:
                 score = 5
             elif rotate_item.w < sky_line[2] and rotate_item.h == hr:
-                score = 4  # 靠右
+                score = 4
             elif rotate_item.w == sky_line[2] and rotate_item.h < hr and rotate_item.h > hl:
                 score = 3
             elif rotate_item.w < sky_line[2] and rotate_item.h == hl:
@@ -794,45 +611,32 @@ class EvaluateModel:
             elif rotate_item.w == sky_line[2] and rotate_item.h < hl:
                 score = 1
             elif rotate_item.w < sky_line[2] and rotate_item.h != hr:
-                score = 0  # 靠右
+                score = 0
             else:
                 return None
             if score == 4 or score == 0:
-                # 靠右
-                # 左下角点
                 left_bottom_point = (sky_line[0] + sky_line[2] - rotate_item.w, sky_line[1])
-                # 判断矩形是否超出边界
                 if self.is_out_of_bound(rotate_item, self.area, left_bottom_point):
                     return None
-                # 将矩形顶部的天际线加入
                 for add_sky_line in rotate_item.add_sky_line_list:
                     copy_sky_line_list.append(
                         (add_sky_line[0] + sky_line[0] + sky_line[2] - rotate_item.w, add_sky_line[1] + sky_line[1],
                          add_sky_line[2]))
-                # 常规切割
                 if sky_line[2] - rotate_item.w > 0:
                     copy_sky_line_list.append((sky_line[0], sky_line[1],
                                                sky_line[2] - rotate_item.w))
             else:
-                # 靠左
-                # 左下角点
                 left_bottom_point = (sky_line[0], sky_line[1])
-                # 判断矩形是否超出边界
                 if self.is_out_of_bound(rotate_item, self.area, left_bottom_point):
                     return None
-                # 将矩形顶部的天际线加入
                 for add_sky_line in rotate_item.add_sky_line_list:
                     copy_sky_line_list.append(
                         (add_sky_line[0] + sky_line[0], add_sky_line[1] + sky_line[1], add_sky_line[2]))
-                # 常规切割
                 if sky_line[2] - rotate_item.w > 0:
                     copy_sky_line_list.append((sky_line[0] + rotate_item.w, sky_line[1],
                                                sky_line[2] - rotate_item.w))
-            # 对天际线列表重新进行排序
             copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-            # 遍历新的天际线列表，将可以合并的天际线进行合并
             copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-            # 模块中心点坐标
             center_position = self.calc_center_position(rotate_item, left_bottom_point)
             return Score(0, self.calc_link_score(center_position, rotate_item, result_list), 0, score,
                          copy_sky_line_list,
@@ -840,7 +644,6 @@ class EvaluateModel:
                                 sky_line,
                                 left_bottom_point))
 
-    # 判断浪费的空间里是否可以放下矩形
     def judge_waste_space_can_place_rect_able(self, waste_w, waste_h):
         for i in range(len(self.item_flags)):
             if self.item_flags[i] == 0:
@@ -849,70 +652,49 @@ class EvaluateModel:
                     return True
         return False
 
-    # 用于L/T型的往左放
     def place_left_for_L_T(self, sky_line, item, rotate_item, copy_sky_line_list, old_sky_line_cnt, orient,
                            result_list):
-        # 往左放
         left_bottom_point = (sky_line[0], sky_line[1])
-        # 如果超出边界，则直接返回None
         if self.is_out_of_bound(rotate_item, self.area,
                                 left_bottom_point):
             return None
-        # 加入item潜在的天际线
         for add_sky_line in rotate_item.add_sky_line_list:
             copy_sky_line_list.append(
                 (add_sky_line[0] + sky_line[0], add_sky_line[1] + sky_line[1], add_sky_line[2]))
-        # 常规切割
         if sky_line[2] - rotate_item.w > 0:
             copy_sky_line_list.append((sky_line[0] + rotate_item.w, sky_line[1],
                                        sky_line[2] - rotate_item.w))
-        # 对天际线列表重新进行排序
         copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-        # 遍历新的天际线列表，将可以合并的天际线进行合并
         copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-        # 计算分数
         score = old_sky_line_cnt - len(copy_sky_line_list)
-        # 模块中心点坐标
         center_position = self.calc_center_position(rotate_item, left_bottom_point)
-        # 生成当前得分对象
         return Score(score, self.calc_link_score(center_position, rotate_item, result_list), 0, 0, copy_sky_line_list,
                      Result(Item.copy(item), rotate_item, orient, center_position,
                             sky_line,
                             left_bottom_point))
 
-    # 用于L/T型的往右放
     def place_right_for_L_T(self, sky_line, item, rotate_item, copy_sky_line_list, old_sky_line_cnt, orient,
                             result_list):
-        # 往右边放
         left_bottom_point = (sky_line[0] + sky_line[2] - rotate_item.floor_horizontal_line[2], sky_line[1])
-        # 如果超出边界，则直接返回None
         if self.is_out_of_bound(rotate_item, self.area,
                                 left_bottom_point):
             return None
-        # 加入item潜在的天际线
         for add_sky_line in rotate_item.add_sky_line_list:
             copy_sky_line_list.append(
                 (add_sky_line[0] + sky_line[0] + (sky_line[2] - rotate_item.floor_horizontal_line[2]),
                  add_sky_line[1] + sky_line[1], add_sky_line[2]))
-        # 常规切割
         if sky_line[2] - rotate_item.w > 0:
             copy_sky_line_list.append((sky_line[0], sky_line[1],
                                        sky_line[2] - rotate_item.w))
-        # 对天际线列表重新进行排序
         copy_sky_line_list = self.sort_sky_line_list_by_y_x(copy_sky_line_list)
-        # 遍历新的天际线列表，将可以合并的天际线进行合并
         copy_sky_line_list = self.combine_sky_line(copy_sky_line_list)
-        # 计算分数
         score = old_sky_line_cnt - len(copy_sky_line_list)
-        # 模块中心点坐标
         center_position = self.calc_center_position(rotate_item, left_bottom_point)
-        # 生成当前得分对象
         return Score(score, self.calc_link_score(center_position, rotate_item, result_list), 0, 0, copy_sky_line_list,
                      Result(Item.copy(item), rotate_item, orient, center_position,
                             sky_line,
                             left_bottom_point))
 
-    # 找出当前天际线左右两边的墙高度 获取 (较高的墙h1，较矮的墙h2)
     def get_h1_h2_by_sky_line(self, sky_line, sky_line_list):
         sky_line_1 = None  # 左边的墙
         sky_line_2 = None  # 右边的墙
@@ -930,21 +712,13 @@ class EvaluateModel:
 
     # 判断放在该天际线上，是否会超出天际线长度
     def is_out_of_sky_line(self, item, sky_line):
-        # 其实就是查看其包络矩形宽度有没有超出天际线长度
         return item.w > sky_line[2]
 
     # 判断放在该天际线上，是否会超出边界
     def is_out_of_bound(self, item, area, left_bottom_point):
-        # 其实就是判断当前模块是否被边界包含
-        # 如果当前模块被多边形边界包含，则没有超出边界
         b = True
-        # item_bound = Polygon(self.get_absolute_boundary_by_sky_line(item.boundary.copy(), left_bottom_point))
-        # global_bound = Polygon(area)
-        # b = global_bound.contains(item_bound)
-
         if len(self.area) == 4:
             for sk in item.add_sky_line_list:
-                # 天际线左端点
                 c = 0
                 p = (sk[0], sk[1])
                 if c == 0:
@@ -955,7 +729,6 @@ class EvaluateModel:
                     if c % 2 == 0:
                         b = False
                         break
-                # 天际线右端点
                 c = 0
                 p = (sk[0] + sk[2], sk[1])
                 if c == 0:
@@ -1036,7 +809,6 @@ class EvaluateModel:
                 b = self.judge_rect_out_of_bound(item.w, item.h, left_bottom_point) is False
         return b is False
 
-    # 判断一个矩形在不在边界内
     def judge_rect_out_of_bound(self, w, h, left_bottom_point):
         b = True
         for horizontal_line in self.area_horizontal_line_list:
@@ -1071,15 +843,12 @@ class EvaluateModel:
                     b = False
         return b is False
 
-    # 判断一个水平线段是否为初始化的天际线
     def judge_horizontal_line_is_init_skyline(self, horizontal_line):
         return str(horizontal_line) in self.init_sky_line_set
 
-    # 根据模块和当前放置的天际线，获取模块放置的中心点坐标（包络矩形中心点）
     def calc_center_position(self, item, left_bottom_point):
         return left_bottom_point[0] + item.w / 2.0, left_bottom_point[1] + item.h / 2.0
 
-    # 初始化天际线列表
     def init_sky_line_list(self, area):
         init_sky_line_list = WskhFunction.calc_horizontal_line_list(area)
         lst = []
@@ -1117,16 +886,13 @@ class EvaluateModel:
                             sky_line_2 is None or sky_line_2[1] > sky_line_i[1]):
                         sky_line_2 = sky_line_i
                         sky_line_2_index = i
-        # 如果sky_line_1和sky_line_2都是None，说明不能合并，直接返回
         if sky_line_1 is None and sky_line_2 is None:
             return sky_line_list
-        # 如果左右两边不等高,则选取较矮的合并
         if sky_line_1 is not None and sky_line_2 is not None:
             if sky_line_1[1] > sky_line_2[1]:
                 sky_line_1 = None
             elif sky_line_1[1] < sky_line_2[1]:
                 sky_line_2 = None
-        # 否则，对sky_line_0和sky_line_1进行合并
         if sky_line_2 is None:
             # 和右边的合并
             sky_line_0 = sky_line_list.pop(0)
@@ -1177,65 +943,32 @@ class EvaluateModel:
             sky_line = (sky_line[0], sky_line[1], min(sky_line[2], min_dis))
         return sky_line
 
-    # 遍历新的天际线列表(需要是排序后的)，将可以合并的天际线进行合并
     def combine_sky_line(self, sky_line_list):
         i = 0
         while i + 1 < len((sky_line_list)):
             j = i + 1
             sky_line_i = sky_line_list[i]
             sky_line_j = sky_line_list[j]
-            # 如果天际线i的尾部正好等于天际线j的头部，那么天际线i和j就可以进行合并
             if sky_line_i[1] == sky_line_j[1] and sky_line_i[0] + sky_line_i[2] == sky_line_j[0]:
                 sky_line_list.pop(min(i, j))
                 sky_line_list.pop(max(i, j) - 1)
                 sky_line_combine = (sky_line_i[0], sky_line_i[1], sky_line_i[2] + sky_line_j[2])
-                # sky_line_combine = self.correct_sky_line_by_area_vertical_line_list(sky_line_combine)
                 if sky_line_combine[2] > 0:
                     sky_line_list.append(sky_line_combine)
                 continue
             i += 1
         return sky_line_list
 
-    # 传入已放置模块和当前准备放置的模块及天际线，判断准备要放置的模块是否会造成重叠
-    # def is_overlap(self, result_list, item, left_bottom_point):
-    #     # 获取当前放置模块的多边形对象
-    #     s = time.time()
-    #     item_bound = Polygon(self.get_absolute_boundary_by_sky_line(item.boundary.copy(), left_bottom_point))
-    #     for result in result_list:
-    #         if result.left_bottom_point[0] + result.rotate_item.w <= left_bottom_point[0]:
-    #             continue  # 在item左边
-    #         elif result.left_bottom_point[0] >= left_bottom_point[0] + item.w:
-    #             continue  # 在item右边
-    #         elif result.left_bottom_point[1] + result.rotate_item.h <= left_bottom_point[1]:
-    #             continue  # 在item下边
-    #         elif result.left_bottom_point[1] >= result.rotate_item.h + left_bottom_point[1]:
-    #             continue  # 在item上边
-    #         # 如果他们的包络矩形重合，则他们有可能重合，进行多边形重合判断
-    #         absolute_boundary = self.get_absolute_boundary_by_sky_line(result.rotate_item.boundary.copy(),
-    #                                                                    result.left_bottom_point)
-    #         if item_bound.overlaps(Polygon(absolute_boundary)):
-    #             self.timer += (time.time() - s)
-    #             return True
-    #     self.timer += (time.time()-s)
-    #     return False
-
-    # TODO 自定义多边形重叠判断
     def is_overlap(self, result_list, item, left_bottom_point):
-        # 获取当前放置模块的多边形对象
         for result in result_list:
             if result.left_bottom_point[0] + result.rotate_item.w <= left_bottom_point[0]:
-                continue  # 在item左边
+                continue
             elif result.left_bottom_point[0] >= left_bottom_point[0] + item.w:
-                continue  # 在item右边
+                continue
             elif result.left_bottom_point[1] + result.rotate_item.h <= left_bottom_point[1]:
-                continue  # 在item下边
+                continue
             elif result.left_bottom_point[1] >= result.rotate_item.h + left_bottom_point[1]:
-                continue  # 在item上边
-            # 如果他们的包络矩形重合，则他们有可能重合，进行多边形重合判断
-            # if CzgFunction.is_overlap(item, left_bottom_point, result.rotate_item,
-            #                           result.left_bottom_point) or CzgFunction.is_overlap(result.rotate_item,
-            #                                                                               result.left_bottom_point,
-            #                                                                               item, left_bottom_point):
+                continue
             if WskhFunction.is_overlap(item, left_bottom_point, result.rotate_item, result.left_bottom_point) is True:
                 return True
         return False
@@ -1263,24 +996,20 @@ class EvaluateModel:
                     break
         return link_value
 
-    # 传入相对包络矩形坐标的顶点列表和sky_line，返回绝对坐标的顶点列表
     def get_absolute_boundary_by_sky_line(self, boundary, left_bottom_point):
         for i in range(len(boundary)):
             boundary[i] = (boundary[i][0] + left_bottom_point[0], boundary[i][1] + left_bottom_point[1])
         return boundary
 
-    # 对天际线列表进行y_x排序
     def sort_sky_line_list_by_y_x(self, sky_line_list):
         sky_line_list.sort(key=functools.cmp_to_key(my_compare_by_y_x))
         return sky_line_list
 
-    # 对天际线列表进行x_y排序
     def sort_sky_line_list_by_x_y(self, sky_line_list):
         sky_line_list.sort(key=functools.cmp_to_key(my_compare_by_x_y))
         return sky_line_list
 
 
-# 自定义排序规则
 def my_compare_by_y_x(sky_line_1, sky_line_2):
     if sky_line_1[1] < sky_line_2[1]:
         return -1

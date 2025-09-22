@@ -1,10 +1,3 @@
-# -*-coding:utf-8-*-
-# Author: WSKH
-# Blog: wskh0929.blog.csdn.net
-# Time: 2022/8/30 21:18
-import sys
-# sys.path.append('/home/eda220806/EDA_Last')
-# sys.path.append('D:\IDEA2020\Project\EDA_Last')
 from enum import Enum
 import src.function.CzgFunction as CzgFunction
 import src.function.WskhFunction as WskhFunction

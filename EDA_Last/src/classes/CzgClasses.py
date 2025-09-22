@@ -2,7 +2,6 @@ from enum import Enum
 import src.function.CzgFunction as CzgFunction
 import src.function.WskhFunction as WskhFunction
 
-
 # 旋转类型枚举类
 class Orient(Enum):
     R0 = "R0"
@@ -90,31 +89,22 @@ class RotateItem:
         }
 
     def init_rotate_item(self):
-        # 计算宽和高
         self.w, self.h = WskhFunction.calc_envelope_rectangle_w_h(self.boundary)
-        # 计算所有竖着线段(x,y,l)
         self.vertical_line_list = WskhFunction.calc_vertical_line_list(self.boundary)
-        # 计算所有水平线段(x,y,l)
         self.horizontal_line_list = WskhFunction.calc_horizontal_line_list(self.boundary)
-        # 获取着地水平线段(x,y,l)
         for horizontal_line in self.horizontal_line_list:
             if horizontal_line[1] == 0:
                 self.floor_horizontal_line = horizontal_line
                 break
-        # 计算放入当前模块将会新增的天际线(x,y,l)
         self.add_sky_line_list = WskhFunction.calc_add_sky_line_list(self.horizontal_line_list)
-        # 找到第二高度
         self.sec_y = None
         for x, y in self.boundary:
             if y != 0 and (self.sec_y is None or self.sec_y > y):
                 self.sec_y = y
-        # 计算对标点
         self.aim_point_list = WskhFunction.calc_aim_point_list(self.boundary)
-        # 获取当前模块type
         if len(self.boundary) == 4:
             self.rect_list = [[0, 0, self.w, self.h]]
         elif len(self.boundary) == 6:
-            # L型
             if len(self.add_sky_line_list) == 1:
                 if len(self.aim_point_list) == 2:
                     self.type = '180'
@@ -131,7 +121,6 @@ class RotateItem:
                     self.h2 = self.h - self.h1
                     self.rect_list = [[0, 0, self.w1, self.h], [self.w1, self.h1, self.w2, self.h2]]
             elif len(self.add_sky_line_list) == 2:
-                # 找到(0,0)这个点，通过判断其两边的情况，判断是0度还是270度
                 i = 0
                 while i < 6:
                     if self.boundary[i][0] == 0 and self.boundary[i][1] == 0:
@@ -160,7 +149,6 @@ class RotateItem:
                         break
                     i += 1
         elif len(self.boundary) == 8:
-            # T型
             if len(self.add_sky_line_list) == 1:
                 self.type = '180'
                 self.w2 = self.floor_horizontal_line[2]

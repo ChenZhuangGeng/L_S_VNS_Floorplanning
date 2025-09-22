@@ -1,73 +1,32 @@
-# -*-coding:utf-8-*-
-# Author: WSKH
-# Blog: wskh0929.blog.csdn.net
-# Time: 2022/8/31 10:57
-from datetime import datetime
-import sys
-# sys.path.append('/home/eda220806/EDA_Last')
-import lightgbm as lgb
 from lightgbm.sklearn import LGBMClassifier
-from sklearn.neighbors import KNeighborsClassifier
 from torch_geometric.nn import TopKPooling, GCNConv, global_mean_pool
-
-from src.function import ReadFileUtils
 from src.model.ClassificationAndRegression.EvaluateModel import *
 import random
 import torch
 import os
 import warnings
-# 忽略所有 UserWarning 类型的警告
+from src.function import ReadFileUtils
 warnings.filterwarnings("ignore", category=UserWarning)
 
 class GCN(torch.nn.Module):
 
-    # # 这是原先的结构
-    # def __init__(self, in_channels, hidden_channels):
-    #     super(GCN, self).__init__()
-    #     torch.manual_seed(520)
-    #     self.hidden_channels = hidden_channels
-    #     self.conv1 = GCNConv(in_channels, hidden_channels)
-    #     self.conv2 = GCNConv(hidden_channels, hidden_channels)
-    #     self.conv3 = GCNConv(hidden_channels, hidden_channels)
-    #     self.top_k_pooling = TopKPooling(hidden_channels, ratio=0.8)
-    #     self.linear1 = torch.nn.Linear(hidden_channels, hidden_channels // 2)
-    #     self.linear2 = torch.nn.Linear(hidden_channels // 2, hidden_channels // 4)
-    #     self.linear3 = torch.nn.Linear(hidden_channels // 4, 1)
-    #     self.linear = torch.nn.Linear(hidden_channels, 1)
-    # def forward(self, x, edge_index, batch):
-    #     # 特征提取
-    #     x = torch.relu(self.conv1(x, edge_index))
-    #     x = self.conv2(x, edge_index)
-    #     x = global_mean_pool(x, batch)
-    #
-    #     # 回归器
-    #     x = torch.relu(self.linear1(x))
-    #     x = torch.relu(self.linear2(x))
-    #     x = self.linear3(x)
-    #     return x
-
-    ## 旧版ALLinONE.pt是这个结构
-    def __init__(self, in_channels, hidden_channels, out_channels=1):
+    def __init__(self, in_channels, hidden_channels):
         super(GCN, self).__init__()
         torch.manual_seed(520)
+        self.hidden_channels = hidden_channels
         self.conv1 = GCNConv(in_channels, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        # 移除了未使用的层
-        # self.conv3 = GCNConv(hidden_channels, hidden_channels)
-
+        self.conv3 = GCNConv(hidden_channels, hidden_channels)
+        self.top_k_pooling = TopKPooling(hidden_channels, ratio=0.8)
         self.linear1 = torch.nn.Linear(hidden_channels, hidden_channels // 2)
         self.linear2 = torch.nn.Linear(hidden_channels // 2, hidden_channels // 4)
-        self.linear3 = torch.nn.Linear(hidden_channels // 4, out_channels)
-
+        self.linear3 = torch.nn.Linear(hidden_channels // 4, 1)
+        self.linear = torch.nn.Linear(hidden_channels, 1)
     def forward(self, x, edge_index, batch):
-        # 1. 图卷积层
         x = torch.relu(self.conv1(x, edge_index))
-        x = torch.relu(self.conv2(x, edge_index))  # 添加了激活函数
-
-        # 2. 全局池化层 (从节点特征聚合图级别的特征)
+        x = self.conv2(x, edge_index)
         x = global_mean_pool(x, batch)
 
-        # 3. 全连接层 (回归器)
         x = torch.relu(self.linear1(x))
         x = torch.relu(self.linear2(x))
         x = self.linear3(x)
@@ -75,8 +34,8 @@ class GCN(torch.nn.Module):
 
 
 
+
 class VNSAlgorithm_C_R:
-    # 构造函数
     def __init__(self, instance):
         self.instance = Instance.copy(instance)  # 实例对象
         self.items = self.instance.items  # 模块列表（列表）
@@ -91,57 +50,7 @@ class VNSAlgorithm_C_R:
         self.vns_iteration_count_realtime = 0  # 新增一个实时的VNS迭代计数器
         current_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # 2. 从当前目录向上回退3级找到项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-
-        # 3. 构建模型的完整路径
-        path_list = [
-            "src/model/ScoreForPlan/Score_GCN_Model/sample5_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample10_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample16_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample20_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample25_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample30_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample40_gcn_data_model.pt",
-            "src/model/ScoreForPlan/Score_GCN_Model/sample45_gcn_data_model.pt",
-        ]
-        item_count = len(self.items)
-        # if item_count == 5:
-        #     self.model_name = path_list[0]
-        #     print("using sample5_gcn_data_model.pt")
-        # elif item_count == 10:
-        #     self.model_name = path_list[1]
-        #     print("using sample10_gcn_data_model.pt")
-        # elif item_count == 16:
-        #     self.model_name = path_list[2]
-        #     print("using sample16_gcn_data_model.pt")
-        # elif item_count == 20:
-        #     self.model_name = path_list[3]
-        #     print("using sample20_gcn_data_model.pt")
-        # elif item_count == 25:
-        #     self.model_name = path_list[4]
-        #     print("using sample25_gcn_data_model.pt")
-        # elif item_count == 30:
-        #     self.model_name = path_list[5]
-        #     print("using sample30_gcn_data_model.pt")
-        # elif item_count == 40:
-        #     self.model_name = path_list[6]
-        #     print("using sample40_gcn_data_model.pt")
-        # elif item_count == 45:
-        #     self.model_name = path_list[7]
-        #     print("using sample45_gcn_data_model.pt")
-        # else:
-        #     raise RuntimeError("items数量不对")
-
-        #Todo: 魏老师服务器请用这段
-
-        # self.model_name = os.path.join(
-        #     project_root,
-        #     'src',
-        #     'model',
-        #     'ScoreForPlan',
-        #     'score_ml_gcn_batch2048_model.pt'
-        # )
 
         self.model_name = os.path.join(
             project_root,
@@ -151,26 +60,10 @@ class VNSAlgorithm_C_R:
             'score_ml_gcn_batch2048_model_statedict.pt'
         )
 
-        # self.model_name = os.path.join(
-        #     project_root,
-        #     'src',
-        #     'model',
-        #     'ScoreForPlan',
-        #     'SampleAll_gcn_data_model.pt'
-        # )
-
-        # self.model_name = os.path.join(
-        #     project_root,
-        #     'src',
-        #     'model',
-        #     'ScoreForPlan',
-        #     'SampleAll_gcn_data_model_0831.pt'
-        # )
-
     # 算法求解外部接口
     def solve(self, init_sequence, timer, min_x, min_y, start_time, GCN_ON, Classify_ON, forGCNTrain_txt_output_path=None):
         # 算法参数
-        self.local_cnt = 500  # 局部搜索次数 500
+        self.local_cnt = 500
         self.y = []
         self.yy = []
         # 历史数据表的最大容量
@@ -196,66 +89,25 @@ class VNSAlgorithm_C_R:
         self.vns_evaluate_cnt = 0
         self.evaluation_total_time = 0.0
         self.vns_iteration_count_realtime = 0
-        # 机器学习预测打分模型
-        # self.model_name = '/home/eda220806/EDA_Last/src/model/ScoreForPlan/score_ml_gcn_batch2048_model.pt'
-        # self.model_name = r'D:\IDEA2020\Project\EDA_Last\src\model\ScoreForPlan\score_ml_gcn_batch2048_model.pt'
 
-        # Todo: 魏老师服务器请用这段
-        # self.device = torch.device("cpu")
-        #
-        # # self.score_ml_model = torch.load(self.model_name)
-        # # 在服务器上运行时，请用下面这行代码
-        # self.score_ml_model = torch.load(self.model_name, map_location=self.device)
-        #
-        # self.score_ml_model.to(self.device)
-
-        # 1. 定义设备
         self.device = torch.device("cpu")
-
-        # 2. 【关键步骤】创建模型结构的实例（准备一个“空房子”）
-        #    请将下面的 'YourGCNModelClass' 替换为你定义GCN模型的那个类的名字！
-        # self.score_ml_model = GCN(hidden_channels=1024)
         self.score_ml_model = GCN(in_channels=28, hidden_channels=1024)
-
-        # 3. 从文件加载模型的权重字典（卸下“家具”）
         state_dict = torch.load(self.model_name, map_location=self.device)
-
-        # 3. 核心步骤：手动修改键名
-        # 检查旧的键是否存在，如果存在，就用新的键名替换它
-        # .pop() 会获取值并删除旧的键，一步到位
-        # if 'top_k_pooling.select.weight' in state_dict:
-        #     print("找到旧版 TopKPooling 权重，正在进行名称转换...")
-        #     state_dict['top_k_pooling.weight'] = state_dict.pop('top_k_pooling.select.weight')
-        # else:
-        #     print("未找到旧版 TopKPooling 权重，可能已是新版或不存在该层。")
-
         if 'top_k_pooling.weight' in state_dict:
             print("检测到新版 TopKPooling 权重，正在手动转换为旧版名称...")
-            # 把新键名的值取出来，同时删掉新键，然后赋值给代码期望的旧键名
             state_dict['top_k_pooling.select.weight'] = state_dict.pop('top_k_pooling.weight')
-
-        # 4. 将权重加载到模型实例中（把“家具”搬进“房子”）
         self.score_ml_model.load_state_dict(state_dict)
-
-        # 5. (可选，但强烈推荐) 将模型设置为评估模式
-        #    这会关闭 Dropout 和 BatchNorm 等在训练和推理时行为不同的层
         self.score_ml_model.eval()
-
-        # 6. (可选) 将整个加载好的模型移动到指定设备
-        #    虽然你加载时已经映射到CPU，但这行可以确保模型和数据在同一个设备上，是良好的编程习惯。
         self.score_ml_model.to(self.device)
-
-
 
         # 初始化
         self.x_data, self.y_data = [], []
-        self.train_classifier_timer = 0  # 训练第一个分类模型用时
+        self.train_classifier_timer = 0
         self.best_evaluation, evaluation_time = self.evaluate(init_sequence, min_x, min_y, start_time, self.max_time, GCN_ON, forGCNTrain_txt_output_path)  # 初始化最优解
         self.evaluation_total_time += evaluation_time
-        self.predict_cnt = 0  # 预测的次数
-        self.fit_cnt = 0  # 训练的次数
-        self.predict_true_cnt = 0  # 预测正确的次数
-        # 开始算法的迭代
+        self.predict_cnt = 0
+        self.fit_cnt = 0
+        self.predict_true_cnt = 0
         while (time.time() - s) < self.max_time:
             local_sequence = self.swap_sequence(init_sequence.copy())
             local_best_evaluation, evaluation_time = self.evaluate(local_sequence, min_x, min_y, start_time, self.max_time, GCN_ON, forGCNTrain_txt_output_path)
@@ -270,7 +122,6 @@ class VNSAlgorithm_C_R:
             self.y.append(self.yy)
         for yy in self.y:
             epochs_size += len(yy)
-        # 迭代完毕，返回最佳结果
         best_obj_value = self.best_evaluation.obj_value
         timer = 0
         accuracy = self.predict_true_cnt / self.predict_cnt if self.predict_cnt > 0 else 0
@@ -284,10 +135,8 @@ class VNSAlgorithm_C_R:
                                               self.predict_true_cnt, result_list_len), self.vns_evaluate_cnt, self.evaluation_total_time
 
 
-
-    # 训练分类模型
+    # 默认关闭二分类
     def train_classifier(self):
-        # 构造数据
         t = time.time()
         self.x_data, self.y_data = [], []
         for i1, d1 in enumerate(self.history_data_list):
@@ -300,14 +149,10 @@ class VNSAlgorithm_C_R:
         for y, x in self.error_data_list:
             self.x_data.append(x)
             self.y_data.append(y)
-        # 机器学习二分类模型
         self.classifier = LGBMClassifier(verbose=-1)
-        # self.classifier = KNeighborsClassifier()
-        # 训练模型
         self.classifier.fit(self.x_data, self.y_data)
         self.train_classifier_timer += (time.time() - t)
 
-    # 判断序列是否存在于历史数据表中
     def in_history_data_list(self, sequence):
         for history_data in self.history_data_list:
             b = True
@@ -319,17 +164,8 @@ class VNSAlgorithm_C_R:
                 return True
         return False
 
-    # 根据序列摆放并评价
     def evaluate(self, sequence, min_x, min_y, start_time, max_time, GCN_ON, forGCNTrain_txt_output_path):
-        # em = EvaluateModel(sequence, self.items, self.links, self.rule, self.area, self.score_ml_model,
-        #                  self.model_name, self.device).evaluate()
-        # for result in em.result_list:
-        #     print(result.to_string())
-        #
-        #
-        # return em
         start_eval_time = time.perf_counter()
-        # 处理一下这个路径 由5-1改为5-1-1，第三个是评估次数self.vns_evaluate_cnt
         modified_path = ReadFileUtils.add_evaluation_count_to_path(forGCNTrain_txt_output_path, self.vns_evaluate_cnt)
         eva = EvaluateModel(sequence, self.items, self.links, self.rule, self.area, self.score_ml_model,
                       self.model_name, self.device).evaluate(min_x, min_y, start_time, max_time, GCN_ON, modified_path)
@@ -368,7 +204,6 @@ class VNSAlgorithm_C_R:
                 t = 0
                 continue
             temp_sequence = []
-            # 迭代次数自增
             self.yy.append(self.best_evaluation.obj_value)
             self.vns_iteration_count_realtime += 1
             try:
@@ -376,10 +211,8 @@ class VNSAlgorithm_C_R:
             except:
                 self.train_data_size_list.append(0)
             if n == 0:
-                # 两两互换
                 temp_sequence = self.swap_sequence(local_best_evaluation.sequence.copy())
             elif n == 1:
-                # 片段交换
                 temp_sequence = self.rotate_sequence(local_best_evaluation.sequence.copy())
             else:
                 raise RuntimeError("不存在的邻域n:" + str(n))
