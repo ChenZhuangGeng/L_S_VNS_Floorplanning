@@ -1,0 +1,19 @@
+# Python 编译文件
+__pycache__/
+*.pyc
+
+# 虚拟环境
+venv/
+env/
+
+# IDE 配置文件
+.idea/
+.vscode/
+
+# 敏感信息
+.env
+*.log
+
+EDA_Last/src/model/ScoreForPlan/data/*.txt
+EDA_Last/src/model/ScoreForPlan/data/AllInOne/*.txt
+EDA_Last/src/model/ScoreForPlan/data/ForDifferentSample/*.txt
