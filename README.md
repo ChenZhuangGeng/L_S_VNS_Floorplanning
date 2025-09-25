@@ -29,15 +29,20 @@ This project relies on [Conda](https://docs.conda.io/en/latest/) for environment
 
 Please follow the steps below to create and activate the required environment:
 
-1. **Clone the repository and enter it**
+1. **Prerequisite: Install Git LFS**
+
+   ```bash
+   git lfs install
+   ```
+
+2. **Clone the repository and enter it**
 
    ```bash
    git clone https://github.com/ChenZhuangGeng/L_S_VNS_Floorplanning.git
-   
    cd L_S_VNS_Floorplanning
    ```
 
-2. **Unzip the core files**
+3. **Unzip the core files**
 
    In the repository's root directory, there is a core compressed file named `L_S_VNS_FP`. You need to unzip it first.
 
@@ -54,14 +59,14 @@ Please follow the steps below to create and activate the required environment:
      - Right-click -> "Extract All..."
      - Ensure you extract it to the current folder, and then enter that folder.
 
-3. **Create the Conda environment**
+4. **Create the Conda environment**
 
    ```bash
    conda env create -f environment.yml
    conda activate dl_pytorch
    ```
 
-4. **Run the project**
+5. **Run the project**
 
    ```bash
    python -m src.run.RunnerForGCN --start 1 --end 301
@@ -172,12 +177,12 @@ The file will contain the following columns, and a new row will be appended for 
 | sample name        | Complete test case identifier (extracted from input path) |
 | main sample name   | Main category of the test case (e.g., `sample5`)          |
 | sub sample name    | Specific name of the test case (e.g., `sample5-1`)        |
-| score              | The model's predicted score (GCN Score)                   |
-| real score         | The evaluated real score (Real Score)                     |
-| vns_iterations     | Number of iterations for the VNS algorithm                |
+| gcn score          | The model's predicted score (GCN Score)                   |
+| real router score  | The evaluated real score (Real Score)                     |
+| vns iterations     | Number of iterations for the VNS algorithm                |
 | evaluation count   | Total number of evaluation function calls                 |
-| avg_eval_time      | Average time for a single evaluation                      |
-| total_compute_time | Total computation time for the algorithm                  |
+| avg eval time      | Average time for a single evaluation                      |
+| total compute time | Total computation time for the algorithm                  |
 
 ## Paper-related Experimental Results
 
